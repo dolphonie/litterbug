@@ -72,6 +72,7 @@ class Map:
         self.bounds = (max_x, max_y)
         self.node_dists = None
         self.dists = {}
+        self.filtered_cells = []
         
     def add_node(self, x, y):
         n = (max(self.nodes) if len(self.nodes) else -1) + 1
@@ -94,6 +95,9 @@ class Map:
             for y in range(max_y):
                 if (x, y) in self.cells:
                     self.cells[(x, y)].set_values(trash[y, x], people[y, x])
+
+    def filter_cells(self):
+        self.filtered_cells = [z for z, cell in self.cells.items() if cell.trash > 0]
                     
     def get_node_dists(self):
         self.node_dists = FloydWarshall(self)
@@ -151,12 +155,11 @@ class Cell:
 
 def PlaceOneTrashCan(m, cells=None, c=0.3):
     if cells is None:
-        cells = [i for i, n in m.cells.items() if n.trash > 0]
+        cells = m.filtered_cells
     cells = [tuple(i) for i in cells]
     best_pos = (None, None)
     best_score = -float('inf')
-    for cell_pos in cells:
-        cell = m.cells[cell_pos]
+    for cell_pos, cell in m.cells.items():
         score = cell.people
         for cp2 in cells:
             cell2 = m.cells[cp2]
@@ -176,14 +179,14 @@ def PlaceTrashCans(m, trash_cost=5):
     best_pos = None
     best_score = -float('inf')
     
-    important_cells = [(i, n.trash) for i, n in m.cells.items()]
-    important_cells, cell_trash = list(zip(*important_cells))
+    important_cells = m.filtered_cells
+    cell_trash = [m.cells[i].trash for i in important_cells]
     X = np.array(important_cells).reshape(len(important_cells), 2)
     
     while True:
+        print(k)
         trash_cans = []
         score = -k * trash_cost
-        
         km = KMeans(n_clusters=k)
         predict = km.fit_predict(X, cell_trash)
         for i in range(k):
@@ -218,6 +221,8 @@ def Run(nodes, edges, trash_array, people_array, save_name, trash_cost=5):
     print("set vals")
     m.get_node_dists()
     print("got distances")
+    m.filter_cells()
+    print("filtered down to", len(m.filtered_cells), "/", len(m.cells))
     trash_pos = PlaceTrashCans(m, trash_cost=trash_cost)
     
     fig, ax = plt.subplots()
@@ -233,8 +238,7 @@ def Run(nodes, edges, trash_array, people_array, save_name, trash_cost=5):
     return len(trash_pos), trash_pos
 
 
-# In[123]:
-
+# In[126]:
 
 # Testing
 nodes_x = [0, 3, 3, 5, 7, 0, 3, 5, 0, 3]
@@ -246,51 +250,71 @@ trash = np.array([[0., 2., 3., 1., 0., 0., 0., 0.],
                   [0., 0., 0., 2., 0., 0., 0., 0.],
                   [0., 0., 0., 0., 0., 0., 0., 0.],
                   [0., 0., 0., 0., 0., 0., 0., 0.],
-                  [0., 0., 0., 1., 2., 3., 1., 1.],
+                  [0., 0., 0., 1., 2., 3., 1., 3.],
                   [0., 0., 0., 2., 0., 0., 3., 0.],
                   [2., 4., 0., 4., 1., 0., 0., 0.],
                   [4., 2., 2., 3., 0., 0., 0., 0.]])
 
-test1 = Run(nodes, edges, trash, None, "test1")
+test1 = Run(nodes, edges, trash, None, "test1", 3.5)
 print(test1)
 
-
-# In[126]:
+fig, ax = plt.subplots()
+plt.imshow(trash, cmap='hot')
+for edge in edges:
+    ax.plot([nodes_x[edge[0]], nodes_x[edge[1]]], [nodes_y[edge[0]], nodes_y[edge[1]]], color='b', linewidth=1, alpha=0.5)
+ax.scatter(*zip(*(test1[1])), zorder=4, color='g')
+fig.savefig("test1.png")
 
 
 # Big test
-size = 20
+size = 15
 #make nodes
 nodes=[]
 for x in range(size):
     for y in range(size):
         nodes.append([x+0.5*r.random(),y+r.random()])
-nodes = [[round(x*50),round(y*50)] for [x,y] in nodes]
+nodes = [[round(x*25),round(y*25)] for [x,y] in nodes]
 nodes_x, nodes_y = list(zip(*nodes))
 #make edges
 edges=[]
 for i in range(size):
     for j in range(size):
         if j != size-1:
-            edges.append([j+20*i,j+20*i+1])
+            edges.append([j+15*i,j+15*i+1])
         if i != size-1:
-            edges.append([j+20*i,j+20*(i+1)])
+            edges.append([j+15*i,j+15*(i+1)])
 #make litter
 weights=[]
 res = 4
 for i in range(len(edges)):
     weights.append([])
     for j in range(res):
-        if r.randint(0, 99) < 30:
+        if r.randint(0, 99) < 60:
             weights[i].append(0)
         else:
-            weights[i].append(r.randint(0,5))
+            weights[i].append(r.randint(0,8))
 
 
 # In[127]:
 
 
-trash = np.zeros((size * 50, size * 50))
+trash = np.zeros((size * 25 + 1, size * 25 + 1))
+for i in range(len(edges)):
+    edge = edges[i]
+    na, nb = edge
+    path = Bresenham(nodes_x[na], nodes_y[na], nodes_x[nb], nodes_y[nb])
+    section_length = len(path) // 3
+    trash[path[0][::-1]] = weights[i][0]
+    trash[path[section_length][::-1]] = weights[i][1]
+    trash[path[section_length*2][::-1]] = weights[i][2]
+    trash[path[-1][::-1]] = weights[i][3]
+
+test2 = Run(nodes, edges, trash, None, "test2", 30)
+print(test2)
+
+# Display
+
+trash = np.zeros((size * 25 + 1, size * 25 + 1))
 for i in range(len(edges)):
     edge = edges[i]
     na, nb = edge
@@ -304,8 +328,13 @@ for i in range(len(edges)):
         trash[y, x] = trash_weights[i]
 
 
-# In[128]:
+sr = 8
+trash1 = skimage.measure.block_reduce(trash, (sr, sr), np.max).repeat(sr, axis=0).repeat(sr, axis=1)
 
-
-Run(nodes, edges, trash, None, "test2", 50)
+fig, ax = plt.subplots()
+plt.imshow(trash1, cmap='hot')
+for edge in edges:
+    ax.plot([nodes_x[edge[0]], nodes_x[edge[1]]], [nodes_y[edge[0]], nodes_y[edge[1]]], color='#37FDFC', linewidth=2, alpha=0.5)
+ax.scatter(*zip(*(test2[1])), s=150, zorder=4, color='#66ff00', edgecolors='black')
+fig.savefig("test3.png")
 
