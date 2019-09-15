@@ -1,17 +1,19 @@
 
 # coding: utf-8
 
-# In[93]:
+# In[94]:
 
 
 from collections import defaultdict
 from sklearn.cluster import KMeans
+import skimage.measure
 import numpy as np
+import random as r
 import matplotlib.pyplot as plt
 # get_ipython().run_line_magic('matplotlib', 'notebook')
 
 
-# In[70]:
+# In[2]:
 
 
 # Algorithms
@@ -59,7 +61,7 @@ def FloydWarshall(m):
     return dist
 
 
-# In[77]:
+# In[3]:
 
 
 class Map:
@@ -119,7 +121,7 @@ class Map:
         return dist
 
 
-# In[78]:
+# In[4]:
 
 
 class MapNode:
@@ -129,7 +131,7 @@ class MapNode:
         self.y = y
 
 
-# In[79]:
+# In[5]:
 
 
 class Cell:
@@ -144,7 +146,7 @@ class Cell:
         self.people = people
 
 
-# In[169]:
+# In[6]:
 
 
 def PlaceOneTrashCan(m, cells=None, c=0.3):
@@ -166,7 +168,7 @@ def PlaceOneTrashCan(m, cells=None, c=0.3):
     return best_pos, best_score
 
 
-# In[209]:
+# In[106]:
 
 
 def PlaceTrashCans(m, trash_cost=5):
@@ -198,32 +200,40 @@ def PlaceTrashCans(m, trash_cost=5):
             return best_pos
 
 
-# In[245]:
+# In[122]:
 
 
-def Run(nodes, edges, trash_array, people_array):
+def Run(nodes, edges, trash_array, people_array, save_name, trash_cost=5):
+    print("Running")
     m = Map(max([i[0] for i in nodes]), max([i[1] for i in nodes]))
 
     # initializing
     for node in nodes:
         m.add_node(*node)
+    print("created nodes")
     for edge in edges:
         m.add_edge(*edge)
-    m.set_vals(trash, people)
+    print("created graph")
+    m.set_vals(trash_array, people_array)
+    print("set vals")
     m.get_node_dists()
-    
-    trash_pos = PlaceTrashCans(m)
+    print("got distances")
+    trash_pos = PlaceTrashCans(m, trash_cost=trash_cost)
     
     fig, ax = plt.subplots()
-    ax.imshow(trash_array, cmap="hot")
+    
+    sr = trash_array.shape[0] // 100 + 1
+    trash = skimage.measure.block_reduce(trash_array, (sr, sr), np.max).repeat(sr, axis=0).repeat(sr, axis=1)
+    plt.imshow(trash, cmap='hot')
     for edge in m.edges:
         ax.plot([edge[0].x, edge[1].x], [edge[0].y, edge[1].y], color='black')
     # ax.scatter(*zip(*important_cells), zorder=3)
     ax.scatter(*zip(*trash_pos), zorder=4)
-    return trash_pos
+    fig.savefig(save_name)
+    return len(trash_pos), trash_pos
 
 
-# In[246]:
+# In[123]:
 
 
 # Testing
@@ -241,14 +251,61 @@ trash = np.array([[0., 2., 3., 1., 0., 0., 0., 0.],
                   [2., 4., 0., 4., 1., 0., 0., 0.],
                   [4., 2., 2., 3., 0., 0., 0., 0.]])
 
-people = np.array([[0., 1., 1., 1., 0., 0., 0., 0.],
-                   [0., 0., 0., 1., 0., 0., 0., 0.],
-                   [0., 0., 0., 2., 0., 0., 0., 0.],
-                   [0., 0., 0., 3., 0., 0., 0., 0.],
-                   [0., 0., 0., 1., 2., 1., 1., 3.],
-                   [0., 0., 0., 2., 0., 1., 2., 0.],
-                   [3., 2., 2., 3., 1., 1., 0., 0.],
-                   [3., 2., 1., 4., 2., 0., 0., 0.]])
+test1 = Run(nodes, edges, trash, None, "test1")
+print(test1)
 
-print(Run(nodes, edges, trash, people))
+
+# In[126]:
+
+
+# Big test
+size = 20
+#make nodes
+nodes=[]
+for x in range(size):
+    for y in range(size):
+        nodes.append([x+0.5*r.random(),y+r.random()])
+nodes = [[round(x*50),round(y*50)] for [x,y] in nodes]
+nodes_x, nodes_y = list(zip(*nodes))
+#make edges
+edges=[]
+for i in range(size):
+    for j in range(size):
+        if j != size-1:
+            edges.append([j+20*i,j+20*i+1])
+        if i != size-1:
+            edges.append([j+20*i,j+20*(i+1)])
+#make litter
+weights=[]
+res = 4
+for i in range(len(edges)):
+    weights.append([])
+    for j in range(res):
+        if r.randint(0, 99) < 30:
+            weights[i].append(0)
+        else:
+            weights[i].append(r.randint(0,5))
+
+
+# In[127]:
+
+
+trash = np.zeros((size * 50, size * 50))
+for i in range(len(edges)):
+    edge = edges[i]
+    na, nb = edge
+    path = Bresenham(nodes_x[na], nodes_y[na], nodes_x[nb], nodes_y[nb])
+    section_length = len(path) // 3
+    trash_weights = np.concatenate([np.linspace(weights[i][0], weights[i][1], section_length),
+                    np.linspace(weights[i][1], weights[i][2], section_length),
+                    np.linspace(weights[i][2], weights[i][3], section_length),
+                    np.full((len(path) % 3 + 1), weights[i][-1])])
+    for i, (x, y) in enumerate(path):
+        trash[y, x] = trash_weights[i]
+
+
+# In[128]:
+
+
+Run(nodes, edges, trash, None, "test2", 50)
 
